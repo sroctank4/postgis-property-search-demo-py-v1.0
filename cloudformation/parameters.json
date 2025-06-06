@@ -1,8 +1,7 @@
 {
   "ProjectName": "postgis-property-search-demo-py",
-  "Environment": "development",
+  "PostgreSQLVersion": "15.4",
   "DatabaseInstanceType": "db.t3.medium",
-  "DatabaseName": "pgroute_db",
-  "DatabaseUsername": "postgres",
-  "DatabasePassword": "ChangeMe123!"
+  "BastionInstanceType": "t3.micro",
+  "KeyPairName": "your-ec2-key-pair"
 }

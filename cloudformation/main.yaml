@@ -1,120 +1,247 @@
 AWSTemplateFormatVersion: '2010-09-09'
-Description: 'Complete AWS infrastructure for postgis-property-search-demo-py - pg_route and PostGIS learning environment'
+Description: 'Complete AWS infrastructure for postgis-property-search-demo-py with Ubuntu Bastion host'
 
 Parameters:
   ProjectName:
     Type: String
-    Default: postgis-property-search-demo-py
-    Description: Name of the project for resource naming
-    
-  Environment:
+    Default: 'postgis-property-search-demo-py'
+    Description: 'Project name for resource naming'
+  
+  PostgreSQLVersion:
     Type: String
-    Default: development
-    AllowedValues: [development, staging, production]
-    Description: Environment for deployment
-    
+    Default: '15.4'
+    Description: 'PostgreSQL engine version'
+  
   DatabaseInstanceType:
     Type: String
-    Default: db.t3.medium
-    AllowedValues: 
-      - db.t3.micro
-      - db.t3.small
-      - db.t3.medium
-      - db.t3.large
-      - db.m6i.large
-      - db.m6i.xlarge
-      - db.r6g.large
-      - db.r6g.xlarge
-    Description: Database instance type
-    
-  DatabaseName:
+    Default: 'db.r6g.large'
+    Description: 'Database instance type'
+  
+  BastionInstanceType:
     Type: String
-    Default: pgroute_db
-    Description: PostgreSQL database name
-    
-  DatabaseUsername:
-    Type: String
-    Default: postgres
-    Description: PostgreSQL master username
-    
-  DatabasePassword:
-    Type: String
-    NoEcho: true
-    MinLength: 8
-    Description: PostgreSQL master password (minimum 8 characters)
+    Default: 't3.micro'
+    Description: 'Bastion host instance type'
+  
+  KeyPairName:
+    Type: AWS::EC2::KeyPair::KeyName
+    Description: 'EC2 Key Pair for SSH access to bastion host'
 
 Resources:
-  # VPC Stack
-  VPCStack:
-    Type: AWS::CloudFormation::Stack
+  # VPC Configuration
+  VPC:
+    Type: AWS::EC2::VPC
     Properties:
-      TemplateURL: vpc.yaml
-      Parameters:
-        ProjectName: !Ref ProjectName
-        Environment: !Ref Environment
+      CidrBlock: 10.0.0.0/16
+      EnableDnsHostnames: true
+      EnableDnsSupport: true
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-vpc'
 
-  # Security Stack  
-  SecurityStack:
-    Type: AWS::CloudFormation::Stack
-    DependsOn: VPCStack
+  # Internet Gateway
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
     Properties:
-      TemplateURL: security.yaml
-      Parameters:
-        ProjectName: !Ref ProjectName
-        Environment: !Ref Environment
-        VPCId: !GetAtt VPCStack.Outputs.VPCId
-        VPCCidr: !GetAtt VPCStack.Outputs.VPCCidr
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-igw'
 
-  # Database Stack
-  DatabaseStack:
-    Type: AWS::CloudFormation::Stack
-    DependsOn: [VPCStack, SecurityStack]
+  InternetGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
     Properties:
-      TemplateURL: database.yaml
-      Parameters:
-        ProjectName: !Ref ProjectName
-        Environment: !Ref Environment
-        DatabaseType: RDS
-        DatabaseInstanceType: !Ref DatabaseInstanceType
-        DatabaseName: !Ref DatabaseName
-        DatabaseUsername: !Ref DatabaseUsername
-        DatabasePassword: !Ref DatabasePassword
-        VPCId: !GetAtt VPCStack.Outputs.VPCId
-        PrivateSubnetIds: !GetAtt VPCStack.Outputs.PrivateSubnetIds
-        DatabaseSecurityGroupId: !GetAtt SecurityStack.Outputs.DatabaseSecurityGroupId
+      InternetGatewayId: !Ref InternetGateway
+      VpcId: !Ref VPC
 
-  # Monitoring Stack
-  MonitoringStack:
-    Type: AWS::CloudFormation::Stack
-    DependsOn: DatabaseStack
+  # Public Subnets
+  PublicSubnet1:
+    Type: AWS::EC2::Subnet
     Properties:
-      TemplateURL: monitoring.yaml
-      Parameters:
-        ProjectName: !Ref ProjectName
-        Environment: !Ref Environment
-        DatabaseIdentifier: !GetAtt DatabaseStack.Outputs.DatabaseIdentifier
+      VpcId: !Ref VPC
+      AvailabilityZone: !Select [0, !GetAZs '']
+      CidrBlock: 10.0.1.0/24
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-public-1'
+
+  PublicSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Select [1, !GetAZs '']
+      CidrBlock: 10.0.2.0/24
+      MapPublicIpOnLaunch: true
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-public-2'
+
+  # Private Subnets
+  PrivateSubnet1:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Select [0, !GetAZs '']
+      CidrBlock: 10.0.10.0/24
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-private-1'
+
+  PrivateSubnet2:
+    Type: AWS::EC2::Subnet
+    Properties:
+      VpcId: !Ref VPC
+      AvailabilityZone: !Select [1, !GetAZs '']
+      CidrBlock: 10.0.11.0/24
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-private-2'
+
+  # Route Tables
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Properties:
+      VpcId: !Ref VPC
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-public-rt'
+
+  DefaultPublicRoute:
+    Type: AWS::EC2::Route
+    DependsOn: InternetGatewayAttachment
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  PublicSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      SubnetId: !Ref PublicSubnet1
+
+  PublicSubnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      SubnetId: !Ref PublicSubnet2
+
+  # Security Groups
+  BastionSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub '${ProjectName}-bastion-sg'
+      GroupDescription: Security group for bastion host
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 22
+          ToPort: 22
+          CidrIp: 0.0.0.0/0
+        - IpProtocol: tcp
+          FromPort: 3000
+          ToPort: 3000
+          CidrIp: 0.0.0.0/0
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-bastion-sg'
+
+  DatabaseSecurityGroup:
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Sub '${ProjectName}-db-sg'
+      GroupDescription: Security group for database
+      VpcId: !Ref VPC
+      SecurityGroupIngress:
+        - IpProtocol: tcp
+          FromPort: 5432
+          ToPort: 5432
+          SourceSecurityGroupId: !Ref BastionSecurityGroup
+      SecurityGroupEgress:
+        - IpProtocol: -1
+          CidrIp: 0.0.0.0/0
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-db-sg'
+
+  # Database Subnet Group
+  DatabaseSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: Subnet group for database
+      SubnetIds:
+        - !Ref PrivateSubnet1
+        - !Ref PrivateSubnet2
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-db-subnet-group'
+
+  # Ubuntu Bastion Host
+  BastionHost:
+    Type: AWS::EC2::Instance
+    Properties:
+      ImageId: ami-0c02fb55956c7d316  # Ubuntu 22.04 LTS (update for your region)
+      InstanceType: !Ref BastionInstanceType
+      KeyName: !Ref KeyPairName
+      SubnetId: !Ref PublicSubnet1
+      SecurityGroupIds:
+        - !Ref BastionSecurityGroup
+      UserData:
+        Fn::Base64: !Sub |
+          #!/bin/bash
+          apt-get update
+          apt-get install -y postgresql-client git curl
+          # User will upload and run setup script manually
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-bastion'
+
+  # RDS Database Instance
+  Database:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      DBInstanceIdentifier: !Sub '${ProjectName}-database'
+      DBInstanceClass: !Ref DatabaseInstanceType
+      Engine: postgres
+      EngineVersion: !Ref PostgreSQLVersion
+      MasterUsername: postgres
+      MasterUserPassword: SecurePassword123!
+      AllocatedStorage: 100
+      StorageType: gp3
+      StorageEncrypted: true
+      VPCSecurityGroups:
+        - !Ref DatabaseSecurityGroup
+      DBSubnetGroupName: !Ref DatabaseSubnetGroup
+      BackupRetentionPeriod: 7
+      DeleteAutomatedBackups: true
+      DeletionProtection: false
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-database'
 
 Outputs:
   VPCId:
     Description: VPC ID
-    Value: !GetAtt VPCStack.Outputs.VPCId
-    Export:
-      Name: !Sub '${AWS::StackName}-VPCId'
-      
+    Value: !Ref VPC
+
+  BastionPublicIP:
+    Description: Bastion host public IP
+    Value: !GetAtt BastionHost.PublicIp
+
   DatabaseEndpoint:
     Description: Database endpoint
-    Value: !GetAtt DatabaseStack.Outputs.DatabaseEndpoint
-    Export:
-      Name: !Sub '${AWS::StackName}-DatabaseEndpoint'
-      
+    Value: !GetAtt Database.Endpoint.Address
+
   DatabasePort:
     Description: Database port
-    Value: !GetAtt DatabaseStack.Outputs.DatabasePort
-    Export:
-      Name: !Sub '${AWS::StackName}-DatabasePort'
-      
-  AlertsTopicArn:
-    Description: SNS topic for alerts
-    Value: !GetAtt MonitoringStack.Outputs.AlertsTopicArn
-    Export:
-      Name: !Sub '${AWS::StackName}-AlertsTopicArn'
+    Value: !GetAtt Database.Endpoint.Port
+
+  SSHCommand:
+    Description: SSH command to connect to bastion host
+    Value: !Sub 'ssh -i your-key.pem ubuntu@${BastionHost.PublicIp}'
+
+  DatabaseConnection:
+    Description: Database connection string from bastion host
+    Value: !Sub 'postgresql://postgres:SecurePassword123!@${Database.Endpoint.Address}:5432/postgres'
