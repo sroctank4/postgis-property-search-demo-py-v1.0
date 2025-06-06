@@ -1,0 +1,106 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'CloudWatch monitoring and alerting for pg_route and PostGIS'
+
+Parameters:
+  ProjectName:
+    Type: String
+  Environment:
+    Type: String
+  DatabaseIdentifier:
+    Type: String
+
+Resources:
+  # CloudWatch Log Groups
+  PostgreSQLLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/rds/instance/${DatabaseIdentifier}/postgresql'
+      RetentionInDays: 7
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-postgresql-logs'
+        - Key: Environment
+          Value: !Ref Environment
+
+  UpgradeLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/rds/instance/${DatabaseIdentifier}/upgrade'
+      RetentionInDays: 7
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-upgrade-logs'
+        - Key: Environment
+          Value: !Ref Environment
+
+  # SNS Topic for Alerts
+  AlertsTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub '${ProjectName}-alerts'
+      DisplayName: !Sub '${ProjectName} Alerts'
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-alerts-topic'
+        - Key: Environment
+          Value: !Ref Environment
+
+  # CloudWatch Alarms
+  DatabaseCPUAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-database-cpu-utilization'
+      AlarmDescription: Database CPU utilization
+      MetricName: CPUUtilization
+      Namespace: AWS/RDS
+      Statistic: Average
+      Period: 120
+      EvaluationPeriods: 2
+      Threshold: 80
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: DBInstanceIdentifier
+          Value: !Ref DatabaseIdentifier
+      AlarmActions:
+        - !Ref AlertsTopic
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-database-cpu-alarm'
+        - Key: Environment
+          Value: !Ref Environment
+
+  DatabaseConnectionsAlarm:
+    Type: AWS::CloudWatch::Alarm
+    Properties:
+      AlarmName: !Sub '${ProjectName}-database-connections'
+      AlarmDescription: Database connections
+      MetricName: DatabaseConnections
+      Namespace: AWS/RDS
+      Statistic: Average
+      Period: 120
+      EvaluationPeriods: 2
+      Threshold: 20
+      ComparisonOperator: GreaterThanThreshold
+      Dimensions:
+        - Name: DBInstanceIdentifier
+          Value: !Ref DatabaseIdentifier
+      AlarmActions:
+        - !Ref AlertsTopic
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-database-connections-alarm'
+        - Key: Environment
+          Value: !Ref Environment
+
+Outputs:
+  AlertsTopicArn:
+    Description: ARN of the SNS alerts topic
+    Value: !Ref AlertsTopic
+
+  PostgreSQLLogGroupName:
+    Description: Name of the PostgreSQL log group
+    Value: !Ref PostgreSQLLogGroup
+
+  UpgradeLogGroupName:
+    Description: Name of the upgrade log group
+    Value: !Ref UpgradeLogGroup

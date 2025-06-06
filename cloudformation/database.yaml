@@ -1,0 +1,101 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: 'RDS PostgreSQL instance for pg_route and PostGIS'
+
+Parameters:
+  ProjectName:
+    Type: String
+  Environment:
+    Type: String
+  DatabaseType:
+    Type: String
+  DatabaseInstanceType:
+    Type: String
+  DatabaseName:
+    Type: String
+  DatabaseUsername:
+    Type: String
+  DatabasePassword:
+    Type: String
+    NoEcho: true
+  VPCId:
+    Type: String
+  PrivateSubnetIds:
+    Type: CommaDelimitedList
+  DatabaseSecurityGroupId:
+    Type: String
+
+Resources:
+  # Database Subnet Group
+  DatabaseSubnetGroup:
+    Type: AWS::RDS::DBSubnetGroup
+    Properties:
+      DBSubnetGroupDescription: Subnet group for RDS PostgreSQL
+      SubnetIds: !Ref PrivateSubnetIds
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-subnet-group'
+
+  # RDS Instance
+  DatabaseInstance:
+    Type: AWS::RDS::DBInstance
+    Properties:
+      DBInstanceIdentifier: !Sub '${ProjectName}-database'
+      AllocatedStorage: 100
+      MaxAllocatedStorage: 1000
+      StorageType: gp3
+      StorageEncrypted: true
+      Engine: postgres
+      EngineVersion: '15.4'
+      DBInstanceClass: !Ref DatabaseInstanceType
+      DBName: !Ref DatabaseName
+      MasterUsername: !Ref DatabaseUsername
+      MasterUserPassword: !Ref DatabasePassword
+      VPCSecurityGroups:
+        - !Ref DatabaseSecurityGroupId
+      DBSubnetGroupName: !Ref DatabaseSubnetGroup
+      BackupRetentionPeriod: 7
+      PreferredBackupWindow: "03:00-04:00"
+      PreferredMaintenanceWindow: "sun:04:00-sun:05:00"
+      DeletionProtection: false
+      EnablePerformanceInsights: true
+      PerformanceInsightsRetentionPeriod: 7
+      MonitoringInterval: 60
+      MonitoringRoleArn: !GetAtt RDSMonitoringRole.Arn
+      EnableCloudwatchLogsExports:
+        - postgresql
+        - upgrade
+      Tags:
+        - Key: Name
+          Value: !Sub '${ProjectName}-database'
+        - Key: Environment
+          Value: !Ref Environment
+
+  # RDS Monitoring Role
+  RDSMonitoringRole:
+    Type: AWS::IAM::Role
+    Properties:
+      RoleName: !Sub '${ProjectName}-rds-monitoring-role'
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Sid: ''
+            Effect: Allow
+            Principal:
+              Service: monitoring.rds.amazonaws.com
+            Action: 'sts:AssumeRole'
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/service-role/AmazonRDSEnhancedMonitoringRole'
+      Path: /
+
+Outputs:
+  DatabaseEndpoint:
+    Description: RDS instance endpoint
+    Value: !GetAtt DatabaseInstance.Endpoint.Address
+
+  DatabasePort:
+    Description: Database port
+    Value: !GetAtt DatabaseInstance.Endpoint.Port
+
+  DatabaseIdentifier:
+    Description: Database instance identifier
+    Value: !Ref DatabaseInstance

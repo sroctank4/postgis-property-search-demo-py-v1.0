@@ -1,0 +1,8 @@
+{
+  "ProjectName": "postgis-property-search-demo-py",
+  "Environment": "development",
+  "DatabaseInstanceType": "db.t3.medium",
+  "DatabaseName": "pgroute_db",
+  "DatabaseUsername": "postgres",
+  "DatabasePassword": "ChangeMe123!"
+}

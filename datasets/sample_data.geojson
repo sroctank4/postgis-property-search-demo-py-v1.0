@@ -1,0 +1,48 @@
+{
+  "type": "FeatureCollection",
+  "name": "sample_properties",
+  "features": [
+    {
+      "type": "Feature",
+      "properties": {
+        "id": 1,
+        "address": "123 Main Street, San Francisco, CA 94102",
+        "price": 1250000,
+        "bedrooms": 3,
+        "bathrooms": 2.5,
+        "squareFeet": 1800,
+        "propertyType": "Single Family",
+        "listingStatus": "Active",
+        "listingDate": "2024-01-15"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -122.4194,
+          37.7749
+        ]
+      }
+    },
+    {
+      "type": "Feature",
+      "properties": {
+        "id": 2,
+        "address": "456 Oak Avenue, San Francisco, CA 94103",
+        "price": 950000,
+        "bedrooms": 2,
+        "bathrooms": 2,
+        "squareFeet": 1200,
+        "propertyType": "Condo",
+        "listingStatus": "Active",
+        "listingDate": "2024-01-18"
+      },
+      "geometry": {
+        "type": "Point",
+        "coordinates": [
+          -122.4094,
+          37.7849
+        ]
+      }
+    }
+  ]
+}
